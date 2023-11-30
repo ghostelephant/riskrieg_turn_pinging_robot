@@ -1,0 +1,10 @@
+{
+  "name": "riskrieg_turn_pinging_robot",
+  "version": "1.0.0",
+  "description": "A script to search through active Riskrieg games and turn-ping players in stagnant games",
+  "main": "main.js",
+  "repository": "https://github.com/ghostelephant/riskrieg_turn_pinging_robot.git",
+  "author": "ghostelephant",
+  "license": "MIT",
+  "private": false
+}
