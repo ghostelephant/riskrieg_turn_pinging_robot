@@ -6,5 +6,12 @@
   "repository": "https://github.com/ghostelephant/riskrieg_turn_pinging_robot.git",
   "author": "ghostelephant",
   "license": "MIT",
-  "private": false
+  "private": false,
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dayjs": "^1.11.10",
+    "dotenv": "^16.3.1",
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7"
+  }
 }
