@@ -56,7 +56,9 @@ const getChannelMessageTimestamp = async channelId => {
   const lastMessage = await axios.get(
     `${apiUrl}/channels/${channelId}/messages`,
     {headers}
-  ).then(rsp => rsp.data[0]);
+  )
+    .then(rsp => rsp.data[0])
+    .catch(e => console.log(`Error in channel ${channelId}`));
   // Return the elapsed time (in hours) since last message
   return lastMessage ?
     hoursSinceLastMessage = (dayjs() - dayjs(lastMessage.timestamp)) / (1000 * 3600)
@@ -70,7 +72,8 @@ const sendMessage = async (channelId, content) => {
     `${apiUrl}/channels/${channelId}/messages`,
     {content},
     {headers}
-  );
+  )
+    .catch(e => console.log(`Error posting to channel ${channelId}:\n${e}\n\n`));
 };
 
 
@@ -100,6 +103,7 @@ const scanServer = async serverId => {
         serverId,
         channelId
       });
+      console.log(channelId);
     }
   }
 };
