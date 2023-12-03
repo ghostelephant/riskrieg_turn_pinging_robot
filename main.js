@@ -16,6 +16,8 @@ const saveFileLocation = process.env.SAVE_FILE_LOCATION.split("/");
 
 const serverWhitelist = process.env.SERVER_WHITELIST.split(",");
 
+const channelSkipList = process.env.CHANNEL_SKIP_LIST.split(",");
+
 const headers = {
   Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`
 };
@@ -91,7 +93,8 @@ const scanServer = async serverId => {
       f.substring(f.length - 5) === ".json"
     )
     .map(f => f.substring(0, f.length - 5))
-    .filter(f => isAllDigits(f));
+    .filter(f => isAllDigits(f))
+    .filter(f => !channelSkipList.includes(f));
 
   /* Scan through channels, and for any channel
   whose last message was >25 hours ago, push
