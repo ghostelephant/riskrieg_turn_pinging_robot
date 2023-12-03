@@ -14,6 +14,8 @@ Clone this repository to your server.  Then, create a .env file and include the 
 
 - SERVER_WHITELIST: A comma-separated string with the servers you want this script to ping in.
 
+- CHANNEL_SKIP_LIST (optional): A comma-separated list of any channels you want the bot to skip (e.g. a channel used for looking at maps)
+
 See the `example.env` file for samples with info formatted properly.
 
 Finally, install Node.js dependencies by running `yarn`.
