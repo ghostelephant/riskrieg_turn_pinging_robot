@@ -39,7 +39,6 @@ const serverIds = fs.readdirSync(path.join(
   );
 
 
-
 // HELPER FUNCTIONS -----------------------------
 
 const isAllDigits = str => {
@@ -50,6 +49,25 @@ const isAllDigits = str => {
     }
   }
   return true;
+};
+
+// Get list of game saves from a server folder
+const getChannelData = serverId => {
+  const saveFiles = fs.readdirSync(path.join(
+    __dirname,
+    ...saveFileLocation,
+    serverId
+  ))
+    .filter(f =>
+      f.substring(f.length - 5) === ".json"
+    )
+    .map(f => f.substring(0, f.length - 5))
+    .filter(f => isAllDigits(f))
+    .filter(f => !channelSkipList.includes(f));
+
+  return saveFiles.map(channelId =>
+    ({channelId, serverId})
+  );
 };
 
 // Return hours since most recent channel message
@@ -78,39 +96,6 @@ const sendMessage = async (channelId, content) => {
     .catch(e => console.log(`Error posting to channel ${channelId}:\n${e}\n\n`));
 };
 
-
-
-// BUSINESS-LOGIC-Y FUNCTIONS -------------------
-
-const scanServer = async serverId => {
-  // Get all the save files for current serverId
-  const saveFiles = fs.readdirSync(path.join(
-    __dirname,
-    ...saveFileLocation,
-    serverId
-  ))
-    .filter(f =>
-      f.substring(f.length - 5) === ".json"
-    )
-    .map(f => f.substring(0, f.length - 5))
-    .filter(f => isAllDigits(f))
-    .filter(f => !channelSkipList.includes(f));
-
-  /* Scan through channels, and for any channel
-  whose last message was >25 hours ago, push
-  channelId and serverId to turnPings array */
-  for(let channelId of saveFiles){
-    const hoursSinceLastMessage = await getChannelMessageTimestamp(channelId);
-    if(hoursSinceLastMessage > 25){
-      turnPings.push({
-        serverId,
-        channelId
-      });
-      console.log(channelId);
-    }
-  }
-};
-
 const pingForTurn = async ({serverId, channelId}) => {
   const gameData = require(path.join(
     __dirname,
@@ -130,16 +115,55 @@ const pingForTurn = async ({serverId, channelId}) => {
 
 
 
+// BUSINESS-LOGIC-Y FUNCTIONS -------------------
+
+const scanAllServers = async channelData => {
+  let i = 0;
+  const readInterval = setInterval(async () => {
+    try{
+      const {channelId, serverId} = channelData[i++];
+      const hoursSinceLastMessage = await getChannelMessageTimestamp(channelId);
+      if(hoursSinceLastMessage > 25){
+        turnPings.push({
+          serverId,
+          channelId
+        });
+      }
+      if(i >= channelData.length){
+        doPings();
+        clearInterval(readInterval);
+      }
+    }
+    catch(e){
+      console.log("Experienced an error:", e);
+    }
+  }, 500);
+};
+
+const doPings = () => {
+  let i = 0;
+  const pingInterval = setInterval(() => {
+    try{
+      pingForTurn(turnPings[i++]);
+      if(i >= turnPings.length) clearInterval(pingInterval);
+    }
+    catch(e){
+      console.log(`Error in channel ${channelId}:\n${e}`);
+    }
+  }, 1000);
+}
+
+
+
 // MAIN FUNCTION --------------------------------
 
 const main = async () => {
+const allChannelData = [];
   for(let serverId of serverIds){
-    await scanServer(serverId);
+    const serverChannels = getChannelData(serverId);
+    allChannelData.push(...serverChannels);
   }
-
-  for(let channelId of turnPings){
-    await pingForTurn(channelId);
-  }
+  scanAllServers(allChannelData);
 };
 
 main();
