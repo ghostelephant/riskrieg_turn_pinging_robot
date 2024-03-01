@@ -11,21 +11,20 @@ const path = require("path");
 // DATA -----------------------------------------
 
 const apiUrl = process.env.DISCORD_API_URL;
-
 const saveFileLocation = process.env.SAVE_FILE_LOCATION.split("/");
-
 const serverWhitelist = process.env.SERVER_WHITELIST.split(",");
-
 const channelSkipList = process.env.CHANNEL_SKIP_LIST.split(",");
-
 const headers = {
   Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`
 };
 
-/* Create array for storing turn pings
-(will then pull from this at the end
-to post messages */
-const turnPings = [];
+let pingHistory;
+try{
+  pingHistory = require("./pingHistory");
+}
+catch(e){
+  pingHistory = {};
+}
 
 /* Get a list of server IDs to scan 
 (cross-reference available directories
@@ -37,6 +36,16 @@ const serverIds = fs.readdirSync(path.join(
   .filter(serverId =>
     serverWhitelist.includes(serverId)
   );
+
+/* Sample data for a game not currently
+saved to pingHistory, to be copied when
+a new entry is needed */
+const newGamePingHistory = {
+  playerId: "",
+  lastTurn: null,
+  pingCount: 1,
+  isCurrent: true
+};
 
 
 // HELPER FUNCTIONS -----------------------------
@@ -51,8 +60,9 @@ const isAllDigits = str => {
   return true;
 };
 
-// Get list of game saves from a server folder
-const getChannelData = serverId => {
+/* Get list of game saves from a server
+folder and return relevant data */
+const getGamesDataByServer = serverId => {
   const saveFiles = fs.readdirSync(path.join(
     __dirname,
     ...saveFileLocation,
@@ -65,105 +75,162 @@ const getChannelData = serverId => {
     .filter(f => isAllDigits(f))
     .filter(f => !channelSkipList.includes(f));
 
-  return saveFiles.map(channelId =>
-    ({channelId, serverId})
-  );
+  return saveFiles.map(channelId => {
+    const gameData = require(
+      path.join(
+        __dirname,
+        ...saveFileLocation,
+        serverId,
+        channelId
+      )
+    );
+
+    const lastTurn = gameData.lastUpdated.epochSecond;
+    const currentPlayer = gameData.players[0].identity.id;
+    const gameState = gameData.gameState;
+
+    return {
+      channelId,
+      serverId,
+      lastTurn,
+      currentPlayer,
+      gameState
+    };
+  });
 };
 
-// Return hours since most recent channel message
-const getChannelMessageTimestamp = async channelId => {
-  // Get message data from Discord
-  const lastMessage = await axios.get(
-    `${apiUrl}/channels/${channelId}/messages`,
-    {headers}
-  )
-    .then(rsp => rsp.data[0])
-    .catch(e => console.log(`Error in channel ${channelId}`));
-  // Return the elapsed time (in hours) since last message
-  return lastMessage ?
-    hoursSinceLastMessage = (dayjs() - dayjs(lastMessage.timestamp)) / (1000 * 3600)
-    :
-    null;
-};
 
 // Send a message to a Discord channel
 const sendMessage = async (channelId, content) => {
-  await axios.post(
+  const rsp = await axios.post(
     `${apiUrl}/channels/${channelId}/messages`,
     {content},
     {headers}
   )
     .catch(e => console.log(`Error posting to channel ${channelId}:\n${e}\n\n`));
+
+  return rsp;
 };
 
-const pingForTurn = async ({serverId, channelId}) => {
-  const gameData = require(path.join(
-    __dirname,
-    ...saveFileLocation,
-    serverId,
-    channelId
-  ));
-  
-  sendMessage(
-    channelId,
-    gameData.gameState === "SETUP" ?
-      "Don't forget about this game (which is still in the setup phase)"
-      :
-      `<@${gameData.players[0]?.identity?.id}> friendly reminder ping`
-  );
+const timeoutPromise = (waitTimeInMs, shouldError) => {
+  return new Promise((resolve, reject) => {
+    const wait = setTimeout(() => {
+      clearTimeout(wait);
+      const message = `Promise ${shouldError ? "rejected" : "resolved"} after ${waitTimeInMs} ms`
+      shouldError ?
+        reject(message) : resolve(message);
+    }, waitTimeInMs);
+  });
 };
 
 
 
 // BUSINESS-LOGIC-Y FUNCTIONS -------------------
 
-const scanAllServers = async channelData => {
-  let i = 0;
-  const readInterval = setInterval(async () => {
-    try{
-      const {channelId, serverId} = channelData[i++];
-      const hoursSinceLastMessage = await getChannelMessageTimestamp(channelId);
-      if(hoursSinceLastMessage > 25){
-        turnPings.push({
-          serverId,
-          channelId
-        });
+const findStaleGames = () => {
+  const staleGames = [];
+  for(let serverId of serverIds){
+    const serverChannels = getGamesDataByServer(serverId);
+    const now = dayjs(new Date());
+    serverChannels.forEach(game => {
+      const lastTurn = dayjs(game.lastTurn * 1000);
+      const hoursSinceLastTurn = (now - lastTurn) / 3600000;
+      if(hoursSinceLastTurn > 25){
+        staleGames.push({...game, hoursSinceLastTurn});
       }
-      if(i >= channelData.length){
-        doPings();
-        clearInterval(readInterval);
-      }
-    }
-    catch(e){
-      console.log("Experienced an error:", e);
-    }
-  }, 500);
+    });
+  }
+
+  return staleGames;
 };
 
-const doPings = () => {
-  let i = 0;
-  const pingInterval = setInterval(() => {
-    try{
-      pingForTurn(turnPings[i++]);
-      if(i >= turnPings.length) clearInterval(pingInterval);
+const getPingData = game => {
+  const hist = pingHistory[game.channelId] || {...newGamePingHistory};
+
+  hist.playerId = game.currentPlayer;
+  hist.isCurrent = true;
+  if(game.lastTurn === hist.lastTurn){
+    hist.pingCount++;
+  }
+  else{
+    hist.pingCount = 1;
+  }
+  hist.lastTurn = game.lastTurn;
+  hist.isCurrent = true;
+
+  return hist;
+};
+
+const pingForTurn = async game => {
+  let adjective = "friendly";
+  if(game.pingCount === 2){
+    adjective = "neutral";
+  }
+  else if(game.pingCount >= 3){
+    adjective = "belligerent";
+  }
+
+  const rsp = await sendMessage(
+    game.channelId,
+    game.gameState === "SETUP" ?
+      "Don't forget about this game (which is still in the setup phase)"
+      :
+      `<@${game.currentPlayer}> ${adjective} reminder ping`
+  );
+  return rsp;
+};
+
+const savePingHistory = () => {
+  Object.keys(pingHistory).forEach(channelId => {
+    if(pingHistory[channelId].isCurrent){
+      pingHistory[channelId].isCurrent = false;
     }
-    catch(e){
-      console.log(`Error in channel ${channelId}:\n${e}`);
+    else{
+      delete pingHistory[channelId];
     }
-  }, 1000);
-}
+  });
+  fs.writeFile(
+    "./pingHistory.json",
+    JSON.stringify(pingHistory, null, 2) || "{}",
+    () => {}
+  );
+};
+
+const pingAndDelay = async game => {
+  const delay = timeoutPromise(1000);
+  const message = pingForTurn(game);
+
+  return Promise.all([delay, message])
+    .then(([delay, message]) => {
+      return {delay, message};
+    });
+};
+
+const pingAsyncLoop = async staleGames => {
+  for(let game of staleGames){
+    const rsp = await pingAndDelay(game);
+    console.log(dayjs().format("HH:mm:ss"));
+    console.log(rsp);
+  }
+};
+
 
 
 
 // MAIN FUNCTION --------------------------------
 
 const main = async () => {
-const allChannelData = [];
-  for(let serverId of serverIds){
-    const serverChannels = getChannelData(serverId);
-    allChannelData.push(...serverChannels);
-  }
-  scanAllServers(allChannelData);
+  const staleGames = findStaleGames();
+
+  staleGames.forEach(staleGame => {
+    const pingData = getPingData(staleGame);
+    pingHistory[staleGame.channelId] = pingData;
+    staleGame.pingCount = pingData.pingCount;
+  });
+
+  savePingHistory();
+
+  pingAsyncLoop(staleGames);
 };
 
 main();
