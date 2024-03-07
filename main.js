@@ -43,8 +43,9 @@ a new entry is needed */
 const newGamePingHistory = {
   playerId: "",
   lastTurn: null,
+  lastPing: null,
   pingCount: 1,
-  isCurrent: true
+  isCurrent: true,
 };
 
 
@@ -156,7 +157,7 @@ const getPingData = game => {
     hist.pingCount = 1;
   }
   hist.lastTurn = game.lastTurn;
-  hist.isCurrent = true;
+  hist.lastPing = new Date();
 
   return hist;
 };
@@ -183,7 +184,7 @@ const pingForTurn = async game => {
 const savePingHistory = () => {
   Object.keys(pingHistory).forEach(channelId => {
     if(pingHistory[channelId].isCurrent){
-      pingHistory[channelId].isCurrent = false;
+      delete pingHistory[channelId].isCurrent;
     }
     else{
       delete pingHistory[channelId];
