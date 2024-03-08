@@ -157,7 +157,13 @@ const getPingData = game => {
     hist.pingCount = 1;
   }
   hist.lastTurn = game.lastTurn;
-  hist.lastPing = new Date();
+  if(hist.lastPing && (dayjs(new Date()) - dayjs(hist.lastPing)) / 3600000 < 25){
+    hist.pungRecently = true;
+  }
+  else{
+    hist.pungRecently = false;
+    hist.lastPing = new Date();
+  }
 
   return hist;
 };
@@ -227,11 +233,12 @@ const main = async () => {
     const pingData = getPingData(staleGame);
     pingHistory[staleGame.channelId] = pingData;
     staleGame.pingCount = pingData.pingCount;
+    staleGame.pungRecently = pingData.pungRecently;
   });
 
   savePingHistory();
 
-  pingAsyncLoop(staleGames);
+  pingAsyncLoop(staleGames.filter(g => !g.pungRecently));
 };
 
 main();
