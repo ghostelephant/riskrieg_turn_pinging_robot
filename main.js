@@ -137,7 +137,17 @@ const findStaleGames = () => {
       const lastTurn = dayjs(game.lastTurn * 1000);
       const hoursSinceLastTurn = (now - lastTurn) / 3600000;
       if(hoursSinceLastTurn > 25){
-        staleGames.push({...game, hoursSinceLastTurn});
+        let shouldPing = false;
+        const hist = pingHistory[game.channelId];
+        if(!hist){
+          shouldPing = true;
+        }
+        else if(hist?.lastPing && ((now - dayjs(hist.lastPing)) / 3600000 > 25)){
+          shouldPing = true;
+        }
+        if(shouldPing){
+          staleGames.push({...game, hoursSinceLastTurn});
+        }
       }
     });
   }
@@ -150,20 +160,11 @@ const getPingData = game => {
 
   hist.playerId = game.currentPlayer;
   hist.isCurrent = true;
-  if(game.lastTurn === hist.lastTurn){
-    hist.pingCount++;
-  }
-  else{
-    hist.pingCount = 1;
+  if(game.lastTurn !== hist.lastTurn){
+    hist.pingCount = 0;
   }
   hist.lastTurn = game.lastTurn;
-  if(hist.lastPing && (dayjs(new Date()) - dayjs(hist.lastPing)) / 3600000 < 25){
-    hist.pungRecently = true;
-  }
-  else{
-    hist.pungRecently = false;
-    hist.lastPing = new Date();
-  }
+  hist.lastPing = new Date();
 
   return hist;
 };
@@ -231,14 +232,14 @@ const main = async () => {
 
   staleGames.forEach(staleGame => {
     const pingData = getPingData(staleGame);
+    pingData.pingCount++;
     pingHistory[staleGame.channelId] = pingData;
     staleGame.pingCount = pingData.pingCount;
-    staleGame.pungRecently = pingData.pungRecently;
   });
 
   savePingHistory();
 
-  pingAsyncLoop(staleGames.filter(g => !g.pungRecently));
+  pingAsyncLoop(staleGames);
 };
 
 main();
