@@ -139,14 +139,19 @@ const findStaleGames = () => {
       if(hoursSinceLastTurn > 25){
         let shouldPing = false;
         const hist = pingHistory[game.channelId];
+        const pungRecently = hist?.lastPing && ((now - dayjs(hist.lastPing)) / 3600000 < 25);
+        
         if(!hist){
           shouldPing = true;
         }
-        else if(hist?.lastPing && ((now - dayjs(hist.lastPing)) / 3600000 > 25)){
+        else if(!pungRecently){
           shouldPing = true;
         }
         if(shouldPing){
           staleGames.push({...game, hoursSinceLastTurn});
+        }
+        if(pungRecently){
+          pingHistory[game.channelId].isCurrent = true;
         }
       }
     });
@@ -232,6 +237,7 @@ const main = async () => {
 
   staleGames.forEach(staleGame => {
     const pingData = getPingData(staleGame);
+
     pingData.pingCount++;
     pingHistory[staleGame.channelId] = pingData;
     staleGame.pingCount = pingData.pingCount;
